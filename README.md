@@ -29,16 +29,36 @@ claude plugin marketplace add LiangNiang/claude-magpie-remote
 claude plugin install magpie-remote@claude-magpie-remote
 ```
 
-`magpie-remote` CLI 可全局安装，或用 `npx` 从 GitHub 临时运行。仓库的 `package.json` 将单个可执行文件 `magpie-remote` 映射到 `bin/magpie-remote`：
+全局安装 `magpie-remote` CLI（包未发布到 npm registry，必须带 `github:` 前缀）：
 
 ```sh
 npm install -g github:LiangNiang/claude-magpie-remote
 magpie-remote login
 ```
 
-```sh
-npx --yes --package=github:LiangNiang/claude-magpie-remote magpie-remote login
-```
+### 更新
+
+1. 更新插件，然后重启 Claude Code：
+
+   ```sh
+   claude plugin marketplace update claude-magpie-remote
+   claude plugin update magpie-remote@claude-magpie-remote
+   ```
+
+2. 更新全局 CLI：
+
+   ```sh
+   npm install -g github:LiangNiang/claude-magpie-remote
+   ```
+
+3. 刷新状态栏使用的运行时库 `~/.claude/magpie-remote/lib`（设置了 `CLAUDE_CONFIG_DIR` 时位于该目录下）：
+
+   ```sh
+   magpie-remote sync
+   cat ~/.claude/magpie-remote/lib/VERSION   # 应与仓库 VERSION 一致
+   ```
+
+   插件在 Claude Code 每次启动时也会自动执行 `sync`，版本不同时复制新库；手动运行可以立即生效，也能修复旧版本因 Node 不兼容而未能自动刷新的情况。更新无需重新 `login`。
 
 ## 配置 Magpie
 
