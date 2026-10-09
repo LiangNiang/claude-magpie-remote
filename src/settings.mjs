@@ -254,7 +254,10 @@ export async function saveLoginSettings(options) {
 	setSetting(settings, "env.ANTHROPIC_SMALL_FAST_MODEL", options.fastModel);
 	deleteSetting(settings, "env.ANTHROPIC_MODEL");
 	if (ownsPicker) {
-		setSetting(settings, "modelPicker", { options: buildModelPickerRows(options.catalog) });
+		setSetting(settings, "modelPicker", {
+			options: buildModelPickerRows(options.catalog),
+			replaceBuiltInOptions: true,
+		});
 	}
 
 	const currentStatusLine = getSetting(settings, "statusLine");
@@ -371,8 +374,9 @@ export async function syncLibrary() {
 		const rows = buildModelPickerRows(catalog);
 		const picker = getSetting(settings, "modelPicker");
 		const currentPicker = isRecord(picker) ? picker : {};
-		if (JSON.stringify(currentPicker.options) === JSON.stringify(rows)) return;
-		setSetting(settings, "modelPicker", { ...currentPicker, options: rows });
+		const desiredPicker = { ...currentPicker, options: rows, replaceBuiltInOptions: true };
+		if (JSON.stringify(currentPicker) === JSON.stringify(desiredPicker)) return;
+		setSetting(settings, "modelPicker", desiredPicker);
 		await writeSettings(settings);
 	} catch {}
 }

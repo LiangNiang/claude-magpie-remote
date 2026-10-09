@@ -69,7 +69,7 @@ magpie-remote login [address] \
 
 ### 模型列表如何工作
 
-Claude Code 内置的 gateway model discovery 只会收录 ID 中含 `claude` 或 `anthropic` 的模型，因此常会漏掉 `codex/...`、`zcode/...` 或 Magpie 路由组。本插件改用用户级 `modelPicker`，按 catalog 顺序添加 Magpie 模型；带非空 `kind` 的条目（例如图片模型）不会加入。
+Claude Code 内置的 gateway model discovery 只会收录 ID 中含 `claude` 或 `anthropic` 的模型，因此常会漏掉 `codex/...`、`zcode/...` 或 Magpie 路由组。本插件改用用户级 `modelPicker`，按 catalog 顺序列出 Magpie 模型，并设置 `replaceBuiltInOptions: true` 替换内置列表；`/model` 仍会显示 Claude Code 的 `Default` 和当前会话模型项。Claude Code 原生模型选项不会通过 Magpie 网关路由，因此不会保留在列表中。带非空 `kind` 的条目（例如图片模型）不会加入。
 
 若用户已有自己的 `modelPicker`，登录会保留它并提示，不会覆盖。插件拥有的 picker 会在 Claude Code 每次启动时由 `SessionStart` hook 静默刷新；只有已登录且设置中的网关地址仍匹配时才刷新。若插件未安装或未启用，hook 不会运行；重新安装插件后若列表未更新，可重新运行 `magpie-remote login`。
 

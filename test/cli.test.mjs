@@ -91,6 +91,7 @@ test("login snapshots settings once, keeps custom statusLine, and logout restore
 					description: "Magpie · codex/gpt-5.5",
 				},
 			],
+			replaceBuiltInOptions: true,
 		});
 		assert.deepEqual(updated.statusLine, original.statusLine);
 
@@ -222,6 +223,11 @@ test("sync quietly refreshes an outdated copied library only after login", async
 			"anthropic/claude-sonnet-4-6",
 		]);
 		assert.equal(login.code, 0, login.stderr);
+		const settingsFile = path.join(configDir, "settings.json");
+		const legacySettings = JSON.parse(await readFile(settingsFile, "utf8"));
+		assert.equal(legacySettings.modelPicker.replaceBuiltInOptions, true);
+		delete legacySettings.modelPicker.replaceBuiltInOptions;
+		await writeFile(settingsFile, `${JSON.stringify(legacySettings, null, 2)}\n`);
 		const libDir = path.join(configDir, "magpie-remote", "lib");
 		await writeFile(path.join(libDir, "cli.mjs"), "outdated");
 		await writeFile(path.join(libDir, "VERSION"), "0.0.0\n");
@@ -232,6 +238,7 @@ test("sync quietly refreshes an outdated copied library only after login", async
 		assert.equal(sync.stderr, "");
 		assert.notEqual(await readFile(path.join(libDir, "cli.mjs"), "utf8"), "outdated");
 		assert.equal(await readFile(path.join(libDir, "VERSION"), "utf8"), await readFile(path.resolve("VERSION"), "utf8"));
+		assert.equal(JSON.parse(await readFile(settingsFile, "utf8")).modelPicker.replaceBuiltInOptions, true);
 		currentCatalog = {
 			data: [
 				...catalog.data,
@@ -239,10 +246,10 @@ test("sync quietly refreshes an outdated copied library only after login", async
 			],
 		};
 		await runCli(configDir, ["sync", "--quiet"]);
-		const settingsFile = path.join(configDir, "settings.json");
 		const refreshed = JSON.parse(await readFile(settingsFile, "utf8"));
 		/** @type {Array<{ model: string, label: string, description: string }>} */
 		const refreshedRows = refreshed.modelPicker.options;
+		assert.equal(refreshed.modelPicker.replaceBuiltInOptions, true);
 		assert.deepEqual(
 			refreshedRows.map(({ model }) => model),
 			["anthropic/claude-sonnet-4-6", "anthropic/claude-haiku-4-5", "codex/gpt-5.5", "zcode/glm-5.1"],
