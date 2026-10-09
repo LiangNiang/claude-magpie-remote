@@ -11,7 +11,7 @@ const skip = url ? false : "set MAGPIE_URL and MAGPIE_GATEWAY_KEY to run against
 test("remote Magpie exposes a readable model catalog", { skip }, async () => {
 	if (!url) return;
 	const root = normalizeMagpieUrl(url);
-	const catalog = await fetchMagpieCatalog(root, key, AbortSignal.timeout(20_000));
+	const catalog = await fetchMagpieCatalog(root, key, 20_000);
 	assert.ok(Array.isArray(catalog));
 	console.log(`${catalog.length} chat models returned`);
 });
@@ -19,7 +19,7 @@ test("remote Magpie exposes a readable model catalog", { skip }, async () => {
 test("remote Magpie exposes a readable quota report", { skip }, async () => {
 	if (!url) return;
 	const root = normalizeMagpieUrl(url);
-	const quotas = await fetchMagpieQuotas(root, key, AbortSignal.timeout(20_000));
+	const quotas = await fetchMagpieQuotas(root, key, 20_000);
 	assert.ok(Array.isArray(quotas));
 	assert.ok(formatQuotaReport(quotas).length > 0);
 	console.log(`${quotas.length} quota entries returned`);

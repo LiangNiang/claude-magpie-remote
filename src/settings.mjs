@@ -76,6 +76,19 @@ function isRecord(value) {
 }
 
 /**
+ * @param {object} value
+ * @param {string} key
+ */
+function hasOwn(value, key) {
+	return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+/** @param {unknown} value @returns {unknown} */
+function cloneJson(value) {
+	return JSON.parse(JSON.stringify(value));
+}
+
+/**
  * @param {string} dottedPath
  * @param {unknown} value
  * @returns {unknown}
@@ -83,7 +96,7 @@ function isRecord(value) {
 export function getSetting(value, dottedPath) {
 	let current = value;
 	for (const part of dottedPath.split(".")) {
-		if (!isRecord(current) || !Object.hasOwn(current, part)) return undefined;
+		if (!isRecord(current) || !hasOwn(current, part)) return undefined;
 		current = current[part];
 	}
 	return current;
@@ -101,7 +114,7 @@ function setSetting(settings, dottedPath, value) {
 		if (!isRecord(current[part])) current[part] = {};
 		current = /** @type {Settings} */ (current[part]);
 	}
-	const key = parts.at(-1);
+	const key = parts[parts.length - 1];
 	if (key === undefined) throw new Error("setting path cannot be empty");
 	current[key] = value;
 }
@@ -117,7 +130,7 @@ function deleteSetting(settings, dottedPath) {
 		if (!isRecord(current[part])) return;
 		current = /** @type {Settings} */ (current[part]);
 	}
-	const key = parts.at(-1);
+	const key = parts[parts.length - 1];
 	if (key === undefined) return;
 	delete current[key];
 	if (parts[0] === "env" && isRecord(settings.env) && Object.keys(settings.env).length === 0) {
@@ -201,8 +214,8 @@ async function readOnboardingProfile(profileFile) {
 			warning: "Warning: Claude Code global config is not a valid JSON object; onboarding state was left unchanged.",
 		};
 	}
-	const previous = Object.hasOwn(profile, "hasCompletedOnboarding")
-		? structuredClone(profile.hasCompletedOnboarding)
+	const previous = hasOwn(profile, "hasCompletedOnboarding")
+		? cloneJson(profile.hasCompletedOnboarding)
 		: null;
 	return { profile, previous };
 }
@@ -217,7 +230,7 @@ function isMagpieState(value) {
 		typeof value.root === "string" &&
 		typeof value.version === "string" &&
 		isRecord(value.previous) &&
-		(!Object.hasOwn(value, "picker") || typeof value.picker === "boolean")
+		(!hasOwn(value, "picker") || typeof value.picker === "boolean")
 	);
 }
 
@@ -273,7 +286,7 @@ export async function saveLoginSettings(options) {
 	const settings = await readSettings();
 	const existingState = await readState();
 	const onboardingProfile = await readOnboardingProfile(paths.claudeProfileFile);
-	const onboardingPrevious = Object.hasOwn(existingState ?? {}, "onboarding")
+	const onboardingPrevious = hasOwn(existingState ?? {}, "onboarding")
 		? existingState?.onboarding
 		: "profile" in onboardingProfile
 			? onboardingProfile.previous
@@ -284,9 +297,9 @@ export async function saveLoginSettings(options) {
 		previous = {};
 	}
 	for (const dottedPath of SETTINGS_PATHS) {
-		if (Object.hasOwn(previous, dottedPath)) continue;
+		if (hasOwn(previous, dottedPath)) continue;
 		const oldValue = getSetting(settings, dottedPath);
-		previous[dottedPath] = oldValue === undefined ? null : structuredClone(oldValue);
+		previous[dottedPath] = oldValue === undefined ? null : cloneJson(oldValue);
 	}
 
 	const currentPicker = getSetting(settings, "modelPicker");
@@ -398,11 +411,11 @@ export async function logoutSettings() {
 		else setSetting(settings, dottedPath, value);
 	}
 	await writeSettings(settings);
-	if (Object.hasOwn(state, "onboarding")) {
+	if (hasOwn(state, "onboarding")) {
 		const onboardingProfile = await readOnboardingProfile(paths.claudeProfileFile);
 		if ("profile" in onboardingProfile && onboardingProfile.profile.hasCompletedOnboarding === true) {
 			if (state.onboarding === null) delete onboardingProfile.profile.hasCompletedOnboarding;
-			else onboardingProfile.profile.hasCompletedOnboarding = structuredClone(state.onboarding);
+			else onboardingProfile.profile.hasCompletedOnboarding = cloneJson(state.onboarding);
 			await writeJsonFileAtomically(paths.claudeProfileFile, onboardingProfile.profile);
 		}
 	}
@@ -437,7 +450,7 @@ export async function syncLibrary() {
 		const catalog = await fetchMagpieCatalog(
 			state.root,
 			typeof key === "string" ? key : "",
-			AbortSignal.timeout(3000),
+			3000,
 		);
 		const rows = buildModelPickerRows(catalog);
 		const picker = getSetting(settings, "modelPicker");

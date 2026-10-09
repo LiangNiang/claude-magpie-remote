@@ -86,7 +86,7 @@ export async function renderStatusLine(input, now = Date.now()) {
 			quotas = cache.quotas;
 		} else {
 			try {
-				quotas = await fetchMagpieQuotas(root, connection.key, AbortSignal.timeout(4000));
+				quotas = await fetchMagpieQuotas(root, connection.key, 4000);
 				await writeCache(root, quotas);
 			} catch {
 				const stale = await readCache();

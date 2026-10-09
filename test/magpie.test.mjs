@@ -55,3 +55,12 @@ test("reports rejected gateway keys", async () => {
 		await closeServer(server);
 	}
 });
+
+test("times out when the gateway accepts a request but never responds", async () => {
+	const { root, server } = await startServer(() => {});
+	try {
+		await assert.rejects(fetchMagpieCatalog(root, "k", 200), /timed out/);
+	} finally {
+		await closeServer(server);
+	}
+});

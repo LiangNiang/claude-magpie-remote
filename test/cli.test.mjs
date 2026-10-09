@@ -66,13 +66,13 @@ test("login snapshots settings once, keeps custom statusLine, and logout restore
 		let updated = JSON.parse(await readFile(settingsFile, "utf8"));
 		assert.equal(updated.env.ANTHROPIC_BASE_URL, root);
 		assert.equal(updated.env.ANTHROPIC_AUTH_TOKEN, "initial-secret");
-		assert.equal(Object.hasOwn(updated.env, "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"), false);
+		assert.equal(Object.prototype.hasOwnProperty.call(updated.env, "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"), false);
 		assert.equal(updated.env.ANTHROPIC_DEFAULT_OPUS_MODEL, "anthropic/claude-sonnet-4-6");
 		assert.equal(updated.env.ANTHROPIC_DEFAULT_SONNET_MODEL, "anthropic/claude-sonnet-4-6");
 		assert.equal(updated.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, "anthropic/claude-sonnet-4-6");
 		assert.equal(updated.env.ANTHROPIC_SMALL_FAST_MODEL, "anthropic/claude-sonnet-4-6");
 		assert.equal(updated.model, "anthropic/claude-sonnet-4-6");
-		assert.equal(Object.hasOwn(updated.env, "ANTHROPIC_MODEL"), false);
+		assert.equal(Object.prototype.hasOwnProperty.call(updated.env, "ANTHROPIC_MODEL"), false);
 		assert.equal(updated.env.OTHER_SETTING, "kept");
 		assert.deepEqual(updated.modelPicker, {
 			options: [
@@ -268,7 +268,7 @@ test("login leaves invalid Claude profile JSON untouched and continues with a wa
 			assert.equal(login.stderr.trim().split(/\r?\n/).length, 1);
 		}
 		const state = JSON.parse(await readFile(path.join(configDir, "magpie-remote", "state.json"), "utf8"));
-		assert.equal(Object.hasOwn(state, "onboarding"), false);
+		assert.equal(Object.prototype.hasOwnProperty.call(state, "onboarding"), false);
 	} finally {
 		await closeServer(server);
 		await removeTemporaryDir(configDir);
@@ -389,7 +389,7 @@ test("sync quietly refreshes an outdated copied library only after login", async
 			refreshedRows.map(({ model }) => model),
 			["anthropic/claude-sonnet-4-6", "anthropic/claude-haiku-4-5", "codex/gpt-5.5", "zcode/glm-5.1"],
 		);
-		assert.deepEqual(refreshedRows.at(-1), {
+		assert.deepEqual(refreshedRows[refreshedRows.length - 1], {
 			model: "zcode/glm-5.1",
 			label: "GLM 5.1",
 			description: "Magpie · zcode/glm-5.1",

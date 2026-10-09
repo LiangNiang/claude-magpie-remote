@@ -1,5 +1,7 @@
 // @ts-check
 
+import { getJson } from "./http.mjs";
+
 /**
  * @typedef {{ id: string, [key: string]: unknown }} MagpieEntry
  */
@@ -48,26 +50,30 @@ function catalogEntries(value) {
 /**
  * @param {string} root
  * @param {string} key
- * @param {AbortSignal} [signal]
+ * @param {number} [timeoutMs]
  * @returns {Promise<MagpieEntry[]>}
  */
-export async function fetchMagpieCatalog(root, key, signal) {
+export async function fetchMagpieCatalog(root, key, timeoutMs = 10_000) {
 	let response;
 	try {
-		response = await fetch(`${root}/v1/models`, {
+		response = await getJson(`${root}/v1/models`, {
 			headers: {
 				accept: "application/json",
 				...(key ? { Authorization: `Bearer ${key}` } : {}),
 			},
-			signal,
+			timeoutMs,
 		});
 	} catch (error) {
-		if (signal?.aborted) throw error;
+		if (error instanceof Error && (error.name === "TimeoutError" || error.name === "InvalidJsonError")) {
+			throw error;
+		}
 		throw new Error(`cannot reach ${root}`, { cause: error });
 	}
 	if (response.status === 401 || response.status === 403) {
 		throw new Error("gateway key rejected (is Share on local network on and the key enabled?)");
 	}
-	if (!response.ok) throw new Error(`model list request to ${root} failed with HTTP ${response.status}`);
-	return catalogEntries(await response.json());
+	if (response.status < 200 || response.status >= 300) {
+		throw new Error(`model list request to ${root} failed with HTTP ${response.status}`);
+	}
+	return catalogEntries(response.body);
 }

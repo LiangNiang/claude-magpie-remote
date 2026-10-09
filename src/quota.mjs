@@ -1,5 +1,7 @@
 // @ts-check
 
+import { getJson } from "./http.mjs";
+
 /**
  * @typedef {{ name: string, used: number, unlimited?: boolean, resetsAt?: string, display?: string }} MagpieQuotaWindow
  * @typedef {{
@@ -76,28 +78,32 @@ export function parseMagpieQuotas(value) {
 /**
  * @param {string} root
  * @param {string} key
- * @param {AbortSignal} [signal]
+ * @param {number} [timeoutMs]
  * @returns {Promise<MagpieQuota[]>}
  */
-export async function fetchMagpieQuotas(root, key, signal) {
+export async function fetchMagpieQuotas(root, key, timeoutMs = 10_000) {
 	let response;
 	try {
-		response = await fetch(`${root}/v1/magpie/quotas`, {
+		response = await getJson(`${root}/v1/magpie/quotas`, {
 			headers: {
 				accept: "application/json",
 				...(key ? { Authorization: `Bearer ${key}` } : {}),
 			},
-			signal,
+			timeoutMs,
 		});
 	} catch (error) {
-		if (signal?.aborted) throw error;
+		if (error instanceof Error && (error.name === "TimeoutError" || error.name === "InvalidJsonError")) {
+			throw error;
+		}
 		throw new Error(`cannot reach ${root}`, { cause: error });
 	}
 	if (response.status === 401 || response.status === 403) {
 		throw new Error("gateway key rejected (is Share on local network on and the key enabled?)");
 	}
-	if (!response.ok) throw new Error(`quota request to ${root} failed with HTTP ${response.status}`);
-	return parseMagpieQuotas(await response.json());
+	if (response.status < 200 || response.status >= 300) {
+		throw new Error(`quota request to ${root} failed with HTTP ${response.status}`);
+	}
+	return parseMagpieQuotas(response.body);
 }
 
 /** @param {string} modelId */

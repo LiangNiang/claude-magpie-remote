@@ -6,7 +6,7 @@
 - **额度显示**：状态栏展示当前模型供应商的用量或余额；`/magpie-remote:usage` 查看网关额度。
 - **可恢复配置**：登录时快照插件将修改的设置，退出登录时恢复。
 - **权限模式建议**：auto 模式的分类器请求会绕开所选模型，推荐改用 `bypassPermissions` 等模式，见[权限模式](#权限模式不要使用-auto)。
-- **零运行时依赖**：使用 Node.js 内置 API，支持 Node.js 18 及以上版本。
+- **零运行时依赖**：使用 Node.js 内置 API，支持 Node.js 16 及以上版本。
 
 ![Claude Code 中的 Magpie 额度状态栏](docs/images/statusline.png)
 
@@ -15,7 +15,7 @@
 ## 要求
 
 - Claude Code 2.1.242 或更新版本（支持用户级 `modelPicker`）。
-- Node.js 18 或更新版本。
+- Node.js 16 或更新版本。
 - Magpie 网关已开启 **设置 → 局域网共享（Share on local network）**，并准备好一个 gateway key。
 
 ## 安装
@@ -150,6 +150,7 @@ magpie-remote logout
 - **401 / 403**：检查 gateway key 是否仍有效，以及 Magpie 的局域网共享是否开启。
 - **无法连接或模型列表为空**：确认地址可从 Claude Code 所在机器访问，并检查防火墙和端口；登录要求 catalog 至少包含一个可选模型。
 - **启动后模型列表未刷新**：确认插件已安装并启用；必要时重新运行 `magpie-remote login`。
+- **状态栏未能启动**：状态栏命令使用 Claude Code `PATH` 中的 `node`；切换 Node 版本（例如 nvm）后，请从新 shell 重启 Claude Code。
 - **自定义状态栏未显示 Magpie 额度**：这是预期行为，插件不会替换用户自己的 `statusLine`。可在自己的脚本中调用 `node "<配置目录>/magpie-remote/lib/cli.mjs" statusline`。
 
 ## 开发

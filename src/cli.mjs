@@ -2,8 +2,7 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { emitKeypressEvents } from "node:readline";
-import { createInterface } from "node:readline/promises";
+import { createInterface, emitKeypressEvents } from "node:readline";
 import { stdin, stdout } from "node:process";
 import { fileURLToPath } from "node:url";
 import { fetchMagpieCatalog, normalizeMagpieUrl } from "./magpie.mjs";
@@ -70,7 +69,7 @@ async function ask(prompt, defaultValue = "") {
 	if (!stdin.isTTY) throw new Error("interactive input requires a TTY; provide the value as a flag");
 	const rl = createInterface({ input: stdin, output: stdout });
 	try {
-		const answer = await rl.question(prompt);
+		const answer = await new Promise((resolve) => rl.question(prompt, resolve));
 		return answer.trim() || defaultValue;
 	} finally {
 		rl.close();
@@ -246,7 +245,7 @@ async function status(args) {
 	console.log(`Gateway key: ${maskGatewayKey(connection.key)}`);
 	console.log(`Model: ${typeof model === "string" ? model : "(not set)"}`);
 	try {
-		const catalog = await fetchMagpieCatalog(root, connection.key, AbortSignal.timeout(4000));
+		const catalog = await fetchMagpieCatalog(root, connection.key, 4000);
 		console.log(`Live check: ${catalog.length} models available`);
 	} catch (error) {
 		console.log(`Live check failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -318,6 +317,17 @@ async function dispatch(args) {
 
 /** @param {string[]} [args] */
 export async function main(args = process.argv.slice(2)) {
+	const majorVersion = Number(process.versions.node.split(".")[0]);
+	if (majorVersion < 16) {
+		if (args[0] === "statusline") {
+			console.log("magpie-remote needs Node.js 16+");
+			process.exitCode = 0;
+		} else {
+			console.error(`magpie-remote requires Node.js 16 or newer (current v${process.versions.node})`);
+			process.exitCode = 1;
+		}
+		return;
+	}
 	try {
 		await dispatch(args);
 	} catch (error) {

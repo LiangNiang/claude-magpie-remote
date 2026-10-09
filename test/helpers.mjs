@@ -24,7 +24,7 @@ export async function startServer(handler) {
 /** @param {import("node:http").Server} server */
 export async function closeServer(server) {
 	server.close();
-	server.closeAllConnections();
+	if (typeof server.closeAllConnections === "function") server.closeAllConnections();
 	await once(server, "close");
 }
 
