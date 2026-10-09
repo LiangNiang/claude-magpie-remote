@@ -10,6 +10,8 @@
 
 ![Claude Code 中的 Magpie 额度状态栏](docs/images/statusline.png)
 
+> **重要**：登录后请把 Claude Code 的权限模式从 auto 改为 `bypassPermissions` 等不调用分类器的模式，否则每次工具调用都会额外发送绕开所选模型的 `claude-sonnet-5` 请求，见[权限模式](#权限模式不要使用-auto)。
+
 > 下方截图均来自真实 Claude Code 2.1.295 和本地假 Magpie 网关，使用演示模型与额度数据。
 
 ## 要求
@@ -80,33 +82,6 @@ Claude Code 内置的 gateway model discovery 只会收录 ID 中含 `claude` �
 
 选择非 Claude 模型（例如 `codex/...` 或 `zcode/...`）时，Claude Code 可能提示该模型不在其内置模型 catalog 中，并按 200k token 窗口处理自动压缩。这是 Claude Code 的模型元数据提示；模型仍可通过 Magpie 使用。
 
-## 查看额度
-
-当前模型对应的供应商额度显示在 Claude Code 状态栏，例如 `codex 5h 34% · 7d 71%` 或 `deepseek ¥23.40`。同一供应商有多个账号时，优先显示最近一次经网关服务的账号；`+N` 表示还有 N 个额度条目。
-
-状态栏默认每 60 秒刷新一次。用量达到 75% 时变黄，达到 90% 时变红；请求失败时，仅在缓存来自同一网关地址的情况下使用过期额度。
-
-![Claude Code 中的 Magpie 模型选择器](docs/images/model-picker.png)
-
-显示完整额度，或按供应商筛选：
-
-```text
-/magpie-remote:usage
-/magpie-remote:usage codex
-```
-
-![Magpie quota 报告](docs/images/usage.png)
-
-普通终端中的 CLI 会直接输出额度，不需要 Claude 模型回复：
-
-```sh
-magpie-remote usage
-magpie-remote usage codex
-magpie-remote usage --json
-```
-
-`/magpie-remote:usage` 会在 Claude Code 会话中查询额度，并要求 Claude 将结果原样放入文本代码块；因此仍会产生一次 Claude 回复并消耗额度。Claude Code 中的 `! magpie-remote usage` 虽然执行 shell 命令，命令结果也会返回给 Claude，随后可能触发一次模型回复并消耗额度。若只需要直接查看数字，请在普通终端运行 `magpie-remote usage`。
-
 ## 权限模式：不要使用 auto
 
 Claude Code 2.1.283 起，终端会话默认进入 auto 权限模式。auto 模式会在 Claude 执行命令、修改文件前额外发送一次**分类器**请求审查操作；分类器默认使用写死的 `claude-sonnet-5`，不受 `/model` 选择和 `ANTHROPIC_DEFAULT_*_MODEL` 影响。经 Magpie 使用时会带来：
@@ -137,6 +112,33 @@ Claude Code 2.1.283 起，终端会话默认进入 auto 权限模式。auto 模�
 - 设置非 auto 的 `defaultMode` 后，Claude Code 可能询问一次是否改为 auto，选择不修改即可。
 
 > **注意**：`bypassPermissions` 下 Claude 执行任何命令、修改任何文件都不再询问，也没有分类器拦截危险操作（少数关键路径删除等仍会确认）。官方建议仅在容器、虚拟机等隔离环境中使用；介意风险时请改用 `acceptEdits` 或 `default`。
+
+## 查看额度
+
+当前模型对应的供应商额度显示在 Claude Code 状态栏，例如 `codex 5h 34% · 7d 71%` 或 `deepseek ¥23.40`。同一供应商有多个账号时，优先显示最近一次经网关服务的账号；`+N` 表示还有 N 个额度条目。
+
+状态栏默认每 60 秒刷新一次。用量达到 75% 时变黄，达到 90% 时变红；请求失败时，仅在缓存来自同一网关地址的情况下使用过期额度。
+
+![Claude Code 中的 Magpie 模型选择器](docs/images/model-picker.png)
+
+显示完整额度，或按供应商筛选：
+
+```text
+/magpie-remote:usage
+/magpie-remote:usage codex
+```
+
+![Magpie quota 报告](docs/images/usage.png)
+
+普通终端中的 CLI 会直接输出额度，不需要 Claude 模型回复：
+
+```sh
+magpie-remote usage
+magpie-remote usage codex
+magpie-remote usage --json
+```
+
+`/magpie-remote:usage` 会在 Claude Code 会话中查询额度，并要求 Claude 将结果原样放入文本代码块；因此仍会产生一次 Claude 回复并消耗额度。Claude Code 中的 `! magpie-remote usage` 虽然执行 shell 命令，命令结果也会返回给 Claude，随后可能触发一次模型回复并消耗额度。若只需要直接查看数字，请在普通终端运行 `magpie-remote usage`。
 
 ## 状态、登出与故障排查
 
