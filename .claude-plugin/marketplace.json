@@ -1,0 +1,14 @@
+{
+  "name": "claude-magpie-remote",
+  "description": "Plugins for connecting Claude Code to remote Magpie gateways.",
+  "owner": {
+    "name": "LiangNiang"
+  },
+  "plugins": [
+    {
+      "name": "magpie-remote",
+      "source": "./",
+      "description": "Connect Claude Code to a remote Magpie gateway and display quota usage."
+    }
+  ]
+}

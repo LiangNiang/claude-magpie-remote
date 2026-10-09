@@ -1,0 +1,30 @@
+{
+  "name": "claude-magpie-remote",
+  "version": "1.0.0",
+  "description": "Claude Code plugin and CLI for a remote Magpie gateway",
+  "type": "module",
+  "bin": {
+    "magpie-remote": "bin/magpie-remote"
+  },
+  "files": [
+    ".claude-plugin",
+    "bin",
+    "commands",
+    "hooks",
+    "src",
+    "VERSION",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs",
+    "smoke": "node --test test/smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "typescript": "7.0.2"
+  }
+}
