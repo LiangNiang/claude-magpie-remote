@@ -1,31 +1,40 @@
 # claude-magpie-remote
 
-让 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) 连接另一台机器上运行的 [Magpie](https://github.com/yetone/magpie) 网关：通过 `magpie-remote login` 配置网关地址和 gateway key，选择一个模型，并在状态栏查看当前模型供应商的额度。
+让 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) 连接另一台机器上的 [Magpie](https://github.com/yetone/magpie) 网关：选择远程模型，在状态栏查看额度，或随时查询完整用量。
 
-- **远程模型**：通过 Claude Code 的 gateway model discovery 将网关模型加入 `/model`。
-- **额度显示**：状态栏显示当前模型供应商的窗口用量或余额，`/magpie-remote:usage` 查看额度。
-- **可恢复配置**：登录时保存原设置快照，`magpie-remote logout` 还原插件修改。
-- **零运行时依赖**：使用 Node.js 内置 API；支持 Node.js 18 及以上版本。
+- **远程模型**：将 Magpie catalog 写入 Claude Code 的 `modelPicker`，包括 `codex/...`、`zcode/...` 和路由组模型。
+- **额度显示**：状态栏展示当前模型供应商的用量或余额；`/magpie-remote:usage` 查看网关额度。
+- **可恢复配置**：登录时快照插件将修改的设置，退出登录时恢复。
+- **零运行时依赖**：使用 Node.js 内置 API，支持 Node.js 18 及以上版本。
+
+![Claude Code 中的 Magpie 额度状态栏](docs/images/statusline.png)
+
+> 下方截图均来自真实 Claude Code 2.1.295 和本地假 Magpie 网关，使用演示模型与额度数据。
+
+## 要求
+
+- Claude Code 2.1.242 或更新版本（支持用户级 `modelPicker`）。
+- Node.js 18 或更新版本。
+- Magpie 网关已开启 **设置 → 局域网共享（Share on local network）**，并准备好一个 gateway key。
 
 ## 安装
 
-添加 marketplace 并安装插件：
+在 Claude Code 中添加 marketplace 并安装插件：
 
 ```sh
 claude plugin marketplace add LiangNiang/claude-magpie-remote
 claude plugin install magpie-remote@claude-magpie-remote
 ```
 
-也可在开发或本地测试时加载仓库目录：
+`magpie-remote` CLI 可全局安装，或用 `npx` 从 GitHub 临时运行。仓库的 `package.json` 将单个可执行文件 `magpie-remote` 映射到 `bin/magpie-remote`：
 
 ```sh
-claude --plugin-dir /path/to/claude-magpie-remote
+npm install -g github:LiangNiang/claude-magpie-remote
+magpie-remote login
 ```
 
-全局安装 CLI：
-
 ```sh
-npm install -g claude-magpie-remote
+npx --yes --package=github:LiangNiang/claude-magpie-remote magpie-remote login
 ```
 
 ## 配置 Magpie
@@ -33,7 +42,7 @@ npm install -g claude-magpie-remote
 在运行 Magpie 的机器上：
 
 1. 开启 **设置 → 局域网共享（Share on local network）**。
-2. 运行 `magpie gateway-key add` 创建一个 gateway key。
+2. 运行 `magpie gateway-key add` 创建 gateway key。
 3. 记下 Claude Code 所在机器可访问的地址（例如 `http://192.168.1.20:3425`）和 key。
 
 ## 登录
@@ -42,38 +51,50 @@ npm install -g claude-magpie-remote
 magpie-remote login
 ```
 
-交互式输入网关地址、gateway key、主模型和快速 / 后台模型。也可以用参数登录：
+交互式填写网关地址和 gateway key，从 catalog 中选择主模型与快速 / 后台模型。地址可以带或不带 `/v1`；key 输入时不会回显，CLI 仅显示末尾字符。
+
+也可使用命令行参数：
 
 ```sh
-magpie-remote login http://192.168.1.20:3425 \
+magpie-remote login [address] \
   --key sk-magpie-... \
-  --model anthropic/claude-sonnet-4-6 \
-  --fast-model anthropic/claude-haiku-4-5
+  --model codex/gpt-5.5 \
+  --fast-model codex/gpt-5.4-mini \
+  --no-statusline
 ```
 
-登录会将连接信息写入 `~/.claude/settings.json`，并把状态栏脚本复制到 `~/.claude/magpie-remote/lib/`，避免插件缓存目录变化造成命令失效。自定义的 `statusLine` 不会被覆盖；可在原脚本中调用 CLI 显示额度。使用 `--no-statusline` 可跳过状态栏配置。
+`--no-statusline` 为可选项；省略后，若用户未设置自己的状态栏，CLI 会配置 Magpie 状态栏。主模型和快速 / 后台模型都必须存在于远端 catalog 中。
 
-完成后重启 Claude Code。CLI 会将 Magpie catalog 中的模型写入用户级 `modelPicker`，并在每次 Claude Code 启动时由插件的 `SessionStart` hook 静默刷新，因此所有 Magpie 模型（包括非 Anthropic provider ID）都可在 `/model` 中选择。也可用 `magpie-remote status` 查看连接。
+![交互式登录与模型选择](docs/images/login.png)
 
-此功能需要 Claude Code 2.1.242 或更新版本。
+### 模型列表如何工作
 
-如果没有安装或启用此插件，启动时不会运行刷新 hook；catalog 变化后请重新运行 `magpie-remote login` 更新 `/model` 列表。
+Claude Code 内置的 gateway model discovery 只会收录 ID 中含 `claude` 或 `anthropic` 的模型，因此常会漏掉 `codex/...`、`zcode/...` 或 Magpie 路由组。本插件改用用户级 `modelPicker`，按 catalog 顺序添加 Magpie 模型；带非空 `kind` 的条目（例如图片模型）不会加入。
+
+若用户已有自己的 `modelPicker`，登录会保留它并提示，不会覆盖。插件拥有的 picker 会在 Claude Code 每次启动时由 `SessionStart` hook 静默刷新；只有已登录且设置中的网关地址仍匹配时才刷新。若插件未安装或未启用，hook 不会运行；重新安装插件后若列表未更新，可重新运行 `magpie-remote login`。
+
+`modelPicker` 与 `statusLine` 都遵循所有权规则：用户已有自定义设置时不会覆盖。登录快照第一次登录前的原值，`magpie-remote logout` 会还原设置并移除复制到配置目录的 CLI 库。
+
+选择非 Claude 模型（例如 `codex/...` 或 `zcode/...`）时，Claude Code 可能提示该模型不在其内置模型 catalog 中，并按 200k token 窗口处理自动压缩。这是 Claude Code 的模型元数据提示；模型仍可通过 Magpie 使用。
 
 ## 查看额度
 
-状态栏会显示当前模型所属供应商的额度，例如 `codex 5h 32% · 7d 71%` 或 `deepseek ¥23.40`。同一供应商有多个账号时优先显示最近一次经网关服务的账号，`+N` 表示还有 N 个账号。
+当前模型对应的供应商额度显示在 Claude Code 状态栏，例如 `codex 5h 34% · 7d 71%` 或 `deepseek ¥23.40`。同一供应商有多个账号时，优先显示最近一次经网关服务的账号；`+N` 表示还有 N 个额度条目。
 
-用量达到 75% 时变黄，达到 90% 时变红。额度缓存 60 秒，网关不可达时会使用同一地址的过期缓存。
+状态栏默认每 60 秒刷新一次。用量达到 75% 时变黄，达到 90% 时变红；请求失败时，仅在缓存来自同一网关地址的情况下使用过期额度。
 
-查看全部供应商或筛选结果：
+![Claude Code 中的 Magpie 模型选择器](docs/images/model-picker.png)
+
+显示完整额度，或按供应商筛选：
 
 ```text
 /magpie-remote:usage
 /magpie-remote:usage codex
-/magpie-remote:usage balance
 ```
 
-CLI 也提供相同功能：
+![Magpie quota 报告](docs/images/usage.png)
+
+普通终端中的 CLI 会直接输出额度，不需要 Claude 模型回复：
 
 ```sh
 magpie-remote usage
@@ -81,14 +102,21 @@ magpie-remote usage codex
 magpie-remote usage --json
 ```
 
-## 状态与退出登录
+`/magpie-remote:usage` 会在 Claude Code 会话中查询额度，并要求 Claude 将结果原样放入文本代码块；因此仍会产生一次 Claude 回复并消耗额度。Claude Code 中的 `! magpie-remote usage` 虽然执行 shell 命令，命令结果也会返回给 Claude，随后可能触发一次模型回复并消耗额度。若只需要直接查看数字，请在普通终端运行 `magpie-remote usage`。
+
+## 状态、登出与故障排查
 
 ```sh
 magpie-remote status
 magpie-remote logout
 ```
 
-退出登录会恢复首次登录前的配置并移除插件保存的状态和状态栏脚本。
+`status` 显示连接地址、脱敏后的 key、所选模型和远端模型数量。`logout` 恢复登录前的配置；之后由 Claude Code 或插件安装过程添加的其他设置会保留。
+
+- **401 / 403**：检查 gateway key 是否仍有效，以及 Magpie 的局域网共享是否开启。
+- **无法连接或模型列表为空**：确认地址可从 Claude Code 所在机器访问，并检查防火墙和端口；登录要求 catalog 至少包含一个可选模型。
+- **启动后模型列表未刷新**：确认插件已安装并启用；必要时重新运行 `magpie-remote login`。
+- **自定义状态栏未显示 Magpie 额度**：这是预期行为，插件不会替换用户自己的 `statusLine`。可在自己的脚本中调用 `node "<配置目录>/magpie-remote/lib/cli.mjs" statusline`。
 
 ## 开发
 
@@ -98,7 +126,7 @@ npm run check
 npm test
 ```
 
-对正在使用的 Magpie 做只读冒烟测试（只请求模型列表和额度，不发起对话）：
+对正在使用的 Magpie 做只读冒烟测试，仅请求 `/v1/models` 和 `/v1/magpie/quotas`，不会发起对话：
 
 ```sh
 MAGPIE_URL=http://192.168.1.20:3425 MAGPIE_GATEWAY_KEY=sk-magpie-... npm run smoke
