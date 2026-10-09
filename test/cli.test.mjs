@@ -48,6 +48,7 @@ test("login snapshots settings once, keeps custom statusLine, and logout restore
 		unrelated: { nested: ["unchanged"] },
 	};
 	const settingsFile = path.join(configDir, "settings.json");
+	const claudeProfileFile = path.join(configDir, ".claude.json");
 	try {
 		await writeFile(settingsFile, `${JSON.stringify(original, null, 4)}\n`);
 		const first = await runCli(configDir, [
@@ -99,9 +100,13 @@ test("login snapshots settings once, keeps custom statusLine, and logout restore
 		const firstState = JSON.parse(await readFile(stateFile, "utf8"));
 		assert.equal(firstState.root, root);
 		assert.equal(firstState.picker, true);
+		assert.equal(firstState.onboarding, null);
 		assert.equal(firstState.previous["env.ANTHROPIC_MODEL"], "old-override");
 		assert.equal(firstState.previous.modelPicker, null);
 		assert.deepEqual(firstState.previous["statusLine"], original.statusLine);
+		assert.deepEqual(JSON.parse(await readFile(claudeProfileFile, "utf8")), {
+			hasCompletedOnboarding: true,
+		});
 
 		const second = await runCli(configDir, [
 			"login",
@@ -116,6 +121,7 @@ test("login snapshots settings once, keeps custom statusLine, and logout restore
 		assert.equal(second.code, 0, second.stderr);
 		const secondState = JSON.parse(await readFile(stateFile, "utf8"));
 		assert.deepEqual(secondState.previous, firstState.previous);
+		assert.equal(secondState.onboarding, null);
 		updated = JSON.parse(await readFile(settingsFile, "utf8"));
 		assert.equal(updated.model, "anthropic/claude-haiku-4-5");
 		assert.equal(updated.env.ANTHROPIC_AUTH_TOKEN, "replacement-secret");
@@ -134,6 +140,135 @@ test("login snapshots settings once, keeps custom statusLine, and logout restore
 		const logout = await runCli(configDir, ["logout"]);
 		assert.equal(logout.code, 0, logout.stderr);
 		assert.deepEqual(JSON.parse(await readFile(settingsFile, "utf8")), original);
+		assert.deepEqual(JSON.parse(await readFile(claudeProfileFile, "utf8")), {});
+	} finally {
+		await closeServer(server);
+		await removeTemporaryDir(configDir);
+	}
+});
+
+test("login merges Claude profile data and logout restores the original false onboarding value", async () => {
+	const configDir = await mkdtemp(path.join(os.tmpdir(), "claude-magpie-onboarding-"));
+	const { root, server } = await startServer((_request, response) => sendJson(response, catalog));
+	const profileFile = path.join(configDir, ".claude.json");
+	const originalProfile = {
+		hasCompletedOnboarding: false,
+		oauthAccount: { accountUuid: "preserved-account" },
+		numStartups: 12,
+	};
+	try {
+		await writeFile(profileFile, `${JSON.stringify(originalProfile, null, 4)}\n`);
+		const loginArgs = [
+			"login",
+			root,
+			"--key",
+			"x",
+			"--model",
+			"anthropic/claude-sonnet-4-6",
+		];
+		const login = await runCli(configDir, loginArgs);
+		assert.equal(login.code, 0, login.stderr);
+		const completedProfile = {
+			...originalProfile,
+			hasCompletedOnboarding: true,
+		};
+		assert.deepEqual(JSON.parse(await readFile(profileFile, "utf8")), completedProfile);
+		assert.equal(await readFile(profileFile, "utf8"), `${JSON.stringify(completedProfile, null, 2)}\n`);
+		const stateFile = path.join(configDir, "magpie-remote", "state.json");
+		assert.equal(JSON.parse(await readFile(stateFile, "utf8")).onboarding, false);
+
+		const relogin = await runCli(configDir, loginArgs);
+		assert.equal(relogin.code, 0, relogin.stderr);
+		assert.equal(JSON.parse(await readFile(stateFile, "utf8")).onboarding, false);
+
+		const logout = await runCli(configDir, ["logout"]);
+		assert.equal(logout.code, 0, logout.stderr);
+		assert.deepEqual(JSON.parse(await readFile(profileFile, "utf8")), originalProfile);
+	} finally {
+		await closeServer(server);
+		await removeTemporaryDir(configDir);
+	}
+});
+
+test("login uses HOME/.claude.json when CLAUDE_CONFIG_DIR is unset", async () => {
+	const homeDir = await mkdtemp(path.join(os.tmpdir(), "claude-magpie-home-"));
+	const { root, server } = await startServer((_request, response) => sendJson(response, catalog));
+	const profileFile = path.join(homeDir, ".claude.json");
+	try {
+		const login = await runCli(
+			"",
+			["login", root, "--key", "x", "--model", "anthropic/claude-sonnet-4-6"],
+			"",
+			{ HOME: homeDir },
+		);
+		assert.equal(login.code, 0, login.stderr);
+		assert.deepEqual(JSON.parse(await readFile(profileFile, "utf8")), {
+			hasCompletedOnboarding: true,
+		});
+		assert.ok(await readFile(path.join(homeDir, ".claude", "settings.json"), "utf8"));
+
+		const logout = await runCli("", ["logout"], "", { HOME: homeDir });
+		assert.equal(logout.code, 0, logout.stderr);
+		assert.deepEqual(JSON.parse(await readFile(profileFile, "utf8")), {});
+	} finally {
+		await closeServer(server);
+		await removeTemporaryDir(homeDir);
+	}
+});
+
+test("logout preserves a later change to Claude onboarding state", async () => {
+	const configDir = await mkdtemp(path.join(os.tmpdir(), "claude-magpie-onboarding-change-"));
+	const { root, server } = await startServer((_request, response) => sendJson(response, catalog));
+	const profileFile = path.join(configDir, ".claude.json");
+	try {
+		const login = await runCli(configDir, [
+			"login",
+			root,
+			"--key",
+			"x",
+			"--model",
+			"anthropic/claude-sonnet-4-6",
+		]);
+		assert.equal(login.code, 0, login.stderr);
+		await writeFile(profileFile, `${JSON.stringify({
+			hasCompletedOnboarding: "changed-by-user",
+			userData: true,
+		}, null, 2)}\n`);
+
+		const logout = await runCli(configDir, ["logout"]);
+		assert.equal(logout.code, 0, logout.stderr);
+		assert.deepEqual(JSON.parse(await readFile(profileFile, "utf8")), {
+			hasCompletedOnboarding: "changed-by-user",
+			userData: true,
+		});
+	} finally {
+		await closeServer(server);
+		await removeTemporaryDir(configDir);
+	}
+});
+
+test("login leaves invalid Claude profile JSON untouched and continues with a warning", async () => {
+	const configDir = await mkdtemp(path.join(os.tmpdir(), "claude-magpie-invalid-profile-"));
+	const { root, server } = await startServer((_request, response) => sendJson(response, catalog));
+	const profileFile = path.join(configDir, ".claude.json");
+	try {
+		for (const invalid of ["{ not valid JSON", "[]"]) {
+			await writeFile(profileFile, invalid);
+			const login = await runCli(configDir, [
+				"login",
+				root,
+				"--key",
+				"x",
+				"--model",
+				"anthropic/claude-sonnet-4-6",
+			]);
+			assert.equal(login.code, 0, login.stderr);
+			assert.equal(await readFile(profileFile, "utf8"), invalid);
+			assert.match(login.stderr, /Warning: Claude Code global config is not a valid JSON object/);
+			assert.equal(login.stderr.trim().split(/\r?\n/).length, 1);
+		}
+		const state = JSON.parse(await readFile(path.join(configDir, "magpie-remote", "state.json"), "utf8"));
+		assert.equal(Object.hasOwn(state, "onboarding"), false);
 	} finally {
 		await closeServer(server);
 		await removeTemporaryDir(configDir);

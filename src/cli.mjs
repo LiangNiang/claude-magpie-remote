@@ -227,6 +227,7 @@ async function login(args) {
 	if (result.hasCustomModelPicker) {
 		console.log("Your modelPicker was left unchanged; remove it to let magpie-remote list gateway models in /model.");
 	}
+	if (result.onboardingWarning) console.error(result.onboardingWarning);
 	console.log("Restart Claude Code; Magpie models appear in /model.");
 }
 

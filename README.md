@@ -65,6 +65,8 @@ magpie-remote login [address] \
 
 `--no-statusline` 为可选项；省略后，若用户未设置自己的状态栏，CLI 会配置 Magpie 状态栏。主模型和快速 / 后台模型都必须存在于远端 catalog 中。
 
+登录会将 Claude Code 全局配置中的首次设置标记为已完成，因此跳过主题和登录方式选择；每个文件夹的 workspace trust prompt 仍会显示。
+
 ![交互式登录与模型选择](docs/images/login.png)
 
 ### 模型列表如何工作
@@ -111,7 +113,7 @@ magpie-remote status
 magpie-remote logout
 ```
 
-`status` 显示连接地址、脱敏后的 key、所选模型和远端模型数量。`logout` 恢复登录前的配置；之后由 Claude Code 或插件安装过程添加的其他设置会保留。
+`status` 显示连接地址、脱敏后的 key、所选模型和远端模型数量。`logout` 恢复登录前的配置（包括全局首次设置标记）；之后由 Claude Code 或插件安装过程添加的其他设置会保留。
 
 - **401 / 403**：检查 gateway key 是否仍有效，以及 Magpie 的局域网共享是否开启。
 - **无法连接或模型列表为空**：确认地址可从 Claude Code 所在机器访问，并检查防火墙和端口；登录要求 catalog 至少包含一个可选模型。

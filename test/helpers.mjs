@@ -42,11 +42,12 @@ export async function removeTemporaryDir(directory) {
  * @param {string} configDir
  * @param {string[]} args
  * @param {string} [stdinText]
+ * @param {NodeJS.ProcessEnv} [extraEnv]
  * @returns {Promise<{ code: number, stdout: string, stderr: string }>}
  */
-export async function runCli(configDir, args, stdinText = "") {
+export async function runCli(configDir, args, stdinText = "", extraEnv = {}) {
 	/** @type {NodeJS.ProcessEnv} */
-	const env = { ...process.env, CLAUDE_CONFIG_DIR: configDir };
+	const env = { ...process.env, CLAUDE_CONFIG_DIR: configDir, ...extraEnv };
 	delete env.ANTHROPIC_BASE_URL;
 	delete env.ANTHROPIC_AUTH_TOKEN;
 	const child = spawn(process.execPath, [BIN, ...args], { env, stdio: ["pipe", "pipe", "pipe"] });

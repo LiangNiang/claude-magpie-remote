@@ -7,7 +7,10 @@ import { fileURLToPath } from "node:url";
 import { fetchMagpieCatalog } from "./magpie.mjs";
 
 /**
- * @typedef {{ root: string, version: string, previous: Record<string, unknown | null>, picker?: boolean }} MagpieState
+ * @typedef {{
+ *   root: string, version: string, previous: Record<string, unknown | null>,
+ *   picker?: boolean, onboarding?: unknown | null
+ * }} MagpieState
  * @typedef {{ model: string, label: string, description: string }} ModelPickerOption
  * @typedef {Record<string, unknown>} Settings
  */
@@ -25,13 +28,17 @@ const SETTINGS_PATHS = [
 	"statusLine",
 ];
 
-/** @returns {{ configDir: string, settingsFile: string, pluginDir: string, stateFile: string, cacheFile: string, libDir: string }} */
+/** @returns {{ configDir: string, settingsFile: string, claudeProfileFile: string, pluginDir: string, stateFile: string, cacheFile: string, libDir: string }} */
 export function getConfigPaths() {
 	const configDir = path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"));
+	const profileDir = process.env.CLAUDE_CONFIG_DIR
+		? path.resolve(process.env.CLAUDE_CONFIG_DIR)
+		: os.homedir();
 	const pluginDir = path.join(configDir, "magpie-remote");
 	return {
 		configDir,
 		settingsFile: path.join(configDir, "settings.json"),
+		claudeProfileFile: path.join(profileDir, ".claude.json"),
 		pluginDir,
 		stateFile: path.join(pluginDir, "state.json"),
 		cacheFile: path.join(pluginDir, "quota-cache.json"),
@@ -143,6 +150,17 @@ export async function readSettings() {
 }
 
 /**
+ * @param {string} filePath
+ * @param {unknown} value
+ */
+async function writeJsonFileAtomically(filePath, value) {
+	await mkdir(path.dirname(filePath), { recursive: true });
+	const temporaryFile = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+	await writeFile(temporaryFile, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+	await rename(temporaryFile, filePath);
+}
+
+/**
  * @param {unknown} error
  * @returns {boolean}
  */
@@ -155,10 +173,38 @@ function isMissingFile(error) {
  */
 export async function writeSettings(settings) {
 	const { settingsFile } = getConfigPaths();
-	await mkdir(path.dirname(settingsFile), { recursive: true });
-	const temporaryFile = `${settingsFile}.${process.pid}.${Date.now()}.tmp`;
-	await writeFile(temporaryFile, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
-	await rename(temporaryFile, settingsFile);
+	await writeJsonFileAtomically(settingsFile, settings);
+}
+
+/**
+ * @param {string} profileFile
+ * @returns {Promise<{ profile: Record<string, unknown>, previous: unknown | null } | { warning: string }>}
+ */
+async function readOnboardingProfile(profileFile) {
+	let text;
+	try {
+		text = await readFile(profileFile, "utf8");
+	} catch (error) {
+		if (isMissingFile(error)) return { profile: {}, previous: null };
+		throw error;
+	}
+	let profile;
+	try {
+		profile = JSON.parse(text);
+	} catch {
+		return {
+			warning: "Warning: Claude Code global config is not a valid JSON object; onboarding state was left unchanged.",
+		};
+	}
+	if (!isRecord(profile)) {
+		return {
+			warning: "Warning: Claude Code global config is not a valid JSON object; onboarding state was left unchanged.",
+		};
+	}
+	const previous = Object.hasOwn(profile, "hasCompletedOnboarding")
+		? structuredClone(profile.hasCompletedOnboarding)
+		: null;
+	return { profile, previous };
 }
 
 /**
@@ -226,6 +272,12 @@ export async function saveLoginSettings(options) {
 	const paths = getConfigPaths();
 	const settings = await readSettings();
 	const existingState = await readState();
+	const onboardingProfile = await readOnboardingProfile(paths.claudeProfileFile);
+	const onboardingPrevious = Object.hasOwn(existingState ?? {}, "onboarding")
+		? existingState?.onboarding
+		: "profile" in onboardingProfile
+			? onboardingProfile.previous
+			: undefined;
 	/** @type {Record<string, unknown | null>} */
 	let previous = existingState?.previous ?? {};
 	if (!existingState) {
@@ -243,7 +295,14 @@ export async function saveLoginSettings(options) {
 	await mkdir(paths.pluginDir, { recursive: true });
 	/** @type {MagpieState} */
 	const state = { root: options.root, version: options.version, previous, picker: ownsPicker };
+	if (onboardingPrevious !== undefined) state.onboarding = onboardingPrevious;
 	await writeFile(paths.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+	if ("profile" in onboardingProfile) {
+		await writeJsonFileAtomically(paths.claudeProfileFile, {
+			...onboardingProfile.profile,
+			hasCompletedOnboarding: true,
+		});
+	}
 
 	setSetting(settings, "env.ANTHROPIC_BASE_URL", options.root);
 	setSetting(settings, "env.ANTHROPIC_AUTH_TOKEN", options.key);
@@ -282,6 +341,7 @@ export async function saveLoginSettings(options) {
 			!isMagpieStatusLine(currentStatusLine),
 		hasCustomModelPicker: !ownsPicker,
 		libDir: paths.libDir,
+		onboardingWarning: "warning" in onboardingProfile ? onboardingProfile.warning : undefined,
 	};
 }
 
@@ -332,12 +392,20 @@ export async function logoutSettings() {
 	const state = await readState();
 	if (!state) return false;
 	const settings = await readSettings();
+	const paths = getConfigPaths();
 	for (const [dottedPath, value] of Object.entries(state.previous)) {
 		if (value === null) deleteSetting(settings, dottedPath);
 		else setSetting(settings, dottedPath, value);
 	}
 	await writeSettings(settings);
-	const paths = getConfigPaths();
+	if (Object.hasOwn(state, "onboarding")) {
+		const onboardingProfile = await readOnboardingProfile(paths.claudeProfileFile);
+		if ("profile" in onboardingProfile && onboardingProfile.profile.hasCompletedOnboarding === true) {
+			if (state.onboarding === null) delete onboardingProfile.profile.hasCompletedOnboarding;
+			else onboardingProfile.profile.hasCompletedOnboarding = structuredClone(state.onboarding);
+			await writeJsonFileAtomically(paths.claudeProfileFile, onboardingProfile.profile);
+		}
+	}
 	await rm(paths.stateFile, { force: true });
 	await rm(paths.libDir, { recursive: true, force: true });
 	return true;
