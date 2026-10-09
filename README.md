@@ -10,7 +10,7 @@
 
 ![Claude Code 中的 Magpie 额度状态栏](docs/images/statusline.png)
 
-> **重要**：登录后请把 Claude Code 的权限模式从 auto 改为 `bypassPermissions` 等不调用分类器的模式，否则每次工具调用都会额外发送绕开所选模型的 `claude-sonnet-5` 请求，见[权限模式](#权限模式不要使用-auto)。
+> **重要**：登录后请把 Claude Code 的权限模式从 auto 改为 `bypassPermissions` 等不调用分类器的模式，否则 Claude 执行命令、修改文件时会额外发送绕开所选模型的 `claude-sonnet-5` 请求，见[权限模式](#权限模式不要使用-auto)。
 
 > 下方截图均来自真实 Claude Code 2.1.295 和本地假 Magpie 网关，使用演示模型与额度数据。
 
@@ -87,7 +87,7 @@ Claude Code 内置的 gateway model discovery 只会收录 ID 中含 `claude` �
 Claude Code 2.1.283 起，终端会话默认进入 auto 权限模式。auto 模式会在 Claude 执行命令、修改文件前额外发送一次**分类器**请求审查操作；分类器默认使用写死的 `claude-sonnet-5`，不受 `/model` 选择和 `ANTHROPIC_DEFAULT_*_MODEL` 影响。经 Magpie 使用时会带来：
 
 - Magpie 请求日志中出现不带供应商前缀的 `claude-sonnet-5` 请求，由 Magpie 自行挑选提供该模型的供应商，绕开你选的模型；
-- 每次工具调用都多一次请求，额外消耗额度。
+- 每次需要审查的操作都多一次请求，额外消耗额度。
 
 建议改用不调用分类器的模式。在 `~/.claude/settings.json` 中设置默认权限模式（已有 `permissions` 时合并进去，不要覆盖）：
 
