@@ -4,22 +4,24 @@ import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promise
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { fetchMagpieCatalog } from "./magpie.mjs";
 
 /**
- * @typedef {{ root: string, version: string, previous: Record<string, unknown | null> }} MagpieState
+ * @typedef {{ root: string, version: string, previous: Record<string, unknown | null>, picker?: boolean }} MagpieState
+ * @typedef {{ model: string, label: string, description: string }} ModelPickerOption
  * @typedef {Record<string, unknown>} Settings
  */
 
 const SETTINGS_PATHS = [
 	"env.ANTHROPIC_BASE_URL",
 	"env.ANTHROPIC_AUTH_TOKEN",
-	"env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
 	"env.ANTHROPIC_DEFAULT_OPUS_MODEL",
 	"env.ANTHROPIC_DEFAULT_SONNET_MODEL",
 	"env.ANTHROPIC_DEFAULT_HAIKU_MODEL",
 	"env.ANTHROPIC_SMALL_FAST_MODEL",
 	"env.ANTHROPIC_MODEL",
 	"model",
+	"modelPicker",
 	"statusLine",
 ];
 
@@ -35,6 +37,27 @@ export function getConfigPaths() {
 		cacheFile: path.join(pluginDir, "quota-cache.json"),
 		libDir: path.join(pluginDir, "lib"),
 	};
+}
+
+/**
+ * @param {import("./magpie.mjs").MagpieEntry[]} catalog
+ * @returns {ModelPickerOption[]}
+ */
+export function buildModelPickerRows(catalog) {
+	return catalog.map((entry) => {
+		const magpieLabel = entry.magpie_label;
+		const displayName = entry.display_name;
+		const label = typeof magpieLabel === "string" && magpieLabel
+			? magpieLabel
+			: typeof displayName === "string" && displayName
+				? displayName
+				: entry.id;
+		return {
+			model: entry.id,
+			label,
+			description: `Magpie · ${entry.id}`,
+		};
+	});
 }
 
 /**
@@ -147,7 +170,8 @@ function isMagpieState(value) {
 		isRecord(value) &&
 		typeof value.root === "string" &&
 		typeof value.version === "string" &&
-		isRecord(value.previous)
+		isRecord(value.previous) &&
+		(!Object.hasOwn(value, "picker") || typeof value.picker === "boolean")
 	);
 }
 
@@ -193,7 +217,8 @@ function quoteCommandPath(commandPath) {
 
 /**
  * @param {{
- *   root: string, key: string, model: string, fastModel: string,
+ *   root: string, key: string, catalog: import("./magpie.mjs").MagpieEntry[],
+ *   model: string, fastModel: string,
  *   noStatusline: boolean, version: string
  * }} options
  */
@@ -205,27 +230,32 @@ export async function saveLoginSettings(options) {
 	let previous = existingState?.previous ?? {};
 	if (!existingState) {
 		previous = {};
-		for (const dottedPath of SETTINGS_PATHS) {
-			const oldValue = getSetting(settings, dottedPath);
-			previous[dottedPath] = oldValue === undefined ? null : structuredClone(oldValue);
-		}
+	}
+	for (const dottedPath of SETTINGS_PATHS) {
+		if (Object.hasOwn(previous, dottedPath)) continue;
+		const oldValue = getSetting(settings, dottedPath);
+		previous[dottedPath] = oldValue === undefined ? null : structuredClone(oldValue);
 	}
 
+	const currentPicker = getSetting(settings, "modelPicker");
+	const ownsPicker = currentPicker === undefined || existingState?.picker === true;
 	await copyLibrary(path.dirname(fileURLToPath(import.meta.url)), paths.libDir, options.version);
 	await mkdir(paths.pluginDir, { recursive: true });
 	/** @type {MagpieState} */
-	const state = { root: options.root, version: options.version, previous };
+	const state = { root: options.root, version: options.version, previous, picker: ownsPicker };
 	await writeFile(paths.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 
 	setSetting(settings, "env.ANTHROPIC_BASE_URL", options.root);
 	setSetting(settings, "env.ANTHROPIC_AUTH_TOKEN", options.key);
-	setSetting(settings, "env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "1");
 	setSetting(settings, "model", options.model);
 	setSetting(settings, "env.ANTHROPIC_DEFAULT_OPUS_MODEL", options.model);
 	setSetting(settings, "env.ANTHROPIC_DEFAULT_SONNET_MODEL", options.model);
 	setSetting(settings, "env.ANTHROPIC_DEFAULT_HAIKU_MODEL", options.fastModel);
 	setSetting(settings, "env.ANTHROPIC_SMALL_FAST_MODEL", options.fastModel);
 	deleteSetting(settings, "env.ANTHROPIC_MODEL");
+	if (ownsPicker) {
+		setSetting(settings, "modelPicker", { options: buildModelPickerRows(options.catalog) });
+	}
 
 	const currentStatusLine = getSetting(settings, "statusLine");
 	if (
@@ -247,6 +277,7 @@ export async function saveLoginSettings(options) {
 			!options.noStatusline &&
 			currentStatusLine !== undefined &&
 			!isMagpieStatusLine(currentStatusLine),
+		hasCustomModelPicker: !ownsPicker,
 		libDir: paths.libDir,
 	};
 }
@@ -311,8 +342,10 @@ export async function logoutSettings() {
 
 /** @returns {Promise<void>} */
 export async function syncLibrary() {
+	/** @type {MagpieState | undefined} */
+	let state;
 	try {
-		const state = await readState();
+		state = await readState();
 		if (!state) return;
 		const { libDir } = getConfigPaths();
 		const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -324,5 +357,22 @@ export async function syncLibrary() {
 			installedVersion = (await readFile(path.join(libDir, "VERSION"), "utf8")).trim();
 		} catch {}
 		if (installedVersion !== version) await copyLibrary(moduleDir, libDir, version);
+	} catch {}
+	if (!state?.picker) return;
+	try {
+		const settings = await readSettings();
+		if (getSetting(settings, "env.ANTHROPIC_BASE_URL") !== state.root) return;
+		const key = getSetting(settings, "env.ANTHROPIC_AUTH_TOKEN");
+		const catalog = await fetchMagpieCatalog(
+			state.root,
+			typeof key === "string" ? key : "",
+			AbortSignal.timeout(3000),
+		);
+		const rows = buildModelPickerRows(catalog);
+		const picker = getSetting(settings, "modelPicker");
+		const currentPicker = isRecord(picker) ? picker : {};
+		if (JSON.stringify(currentPicker.options) === JSON.stringify(rows)) return;
+		setSetting(settings, "modelPicker", { ...currentPicker, options: rows });
+		await writeSettings(settings);
 	} catch {}
 }

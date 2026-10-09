@@ -53,9 +53,11 @@ magpie-remote login http://192.168.1.20:3425 \
 
 登录会将连接信息写入 `~/.claude/settings.json`，并把状态栏脚本复制到 `~/.claude/magpie-remote/lib/`，避免插件缓存目录变化造成命令失效。自定义的 `statusLine` 不会被覆盖；可在原脚本中调用 CLI 显示额度。使用 `--no-statusline` 可跳过状态栏配置。
 
-完成后重启 Claude Code。之后可用 `magpie-remote status` 查看连接，也可以在 Claude Code 中运行 `/model` 选择模型。
+完成后重启 Claude Code。CLI 会将 Magpie catalog 中的模型写入用户级 `modelPicker`，并在每次 Claude Code 启动时由插件的 `SessionStart` hook 静默刷新，因此所有 Magpie 模型（包括非 Anthropic provider ID）都可在 `/model` 中选择。也可用 `magpie-remote status` 查看连接。
 
-> Claude Code 自身对 gateway discovery 的模型 ID 有筛选：只将 ID 中包含 `claude` 或 `anthropic`（不区分大小写）的模型加入 picker。因此不符合筛选条件的 Magpie 模型不会出现在 `/model`，即使它们在 Magpie catalog 中。此行为由 Claude Code 实现，插件不能更改。
+此功能需要 Claude Code 2.1.242 或更新版本。
+
+如果没有安装或启用此插件，启动时不会运行刷新 hook；catalog 变化后请重新运行 `magpie-remote login` 更新 `/model` 列表。
 
 ## 查看额度
 

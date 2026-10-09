@@ -9,8 +9,10 @@ import { closeServer, removeTemporaryDir, runCli, sendJson, startServer } from "
 
 const catalog = {
 	data: [
-		{ id: "anthropic/claude-sonnet-4-6", display_name: "Sonnet" },
+		{ id: "anthropic/claude-sonnet-4-6", display_name: "Sonnet", magpie_label: "Magpie Sonnet" },
 		{ id: "anthropic/claude-haiku-4-5", display_name: "Haiku" },
+		{ id: "codex/gpt-5.5" },
+		{ id: "images/flux", kind: "image" },
 	],
 };
 const quotaData = {
@@ -59,11 +61,11 @@ test("login snapshots settings once, keeps custom statusLine, and logout restore
 		assert.equal(first.code, 0, first.stderr);
 		assert.match(first.stdout, /Gateway key: \*\*\*\*cret/);
 		assert.doesNotMatch(first.stdout, /initial-secret/);
-		assert.match(first.stdout, /Models available: 2/);
+		assert.match(first.stdout, /Models available: 3/);
 		let updated = JSON.parse(await readFile(settingsFile, "utf8"));
 		assert.equal(updated.env.ANTHROPIC_BASE_URL, root);
 		assert.equal(updated.env.ANTHROPIC_AUTH_TOKEN, "initial-secret");
-		assert.equal(updated.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, "1");
+		assert.equal(Object.hasOwn(updated.env, "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"), false);
 		assert.equal(updated.env.ANTHROPIC_DEFAULT_OPUS_MODEL, "anthropic/claude-sonnet-4-6");
 		assert.equal(updated.env.ANTHROPIC_DEFAULT_SONNET_MODEL, "anthropic/claude-sonnet-4-6");
 		assert.equal(updated.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, "anthropic/claude-sonnet-4-6");
@@ -71,12 +73,33 @@ test("login snapshots settings once, keeps custom statusLine, and logout restore
 		assert.equal(updated.model, "anthropic/claude-sonnet-4-6");
 		assert.equal(Object.hasOwn(updated.env, "ANTHROPIC_MODEL"), false);
 		assert.equal(updated.env.OTHER_SETTING, "kept");
+		assert.deepEqual(updated.modelPicker, {
+			options: [
+				{
+					model: "anthropic/claude-sonnet-4-6",
+					label: "Magpie Sonnet",
+					description: "Magpie · anthropic/claude-sonnet-4-6",
+				},
+				{
+					model: "anthropic/claude-haiku-4-5",
+					label: "Haiku",
+					description: "Magpie · anthropic/claude-haiku-4-5",
+				},
+				{
+					model: "codex/gpt-5.5",
+					label: "codex/gpt-5.5",
+					description: "Magpie · codex/gpt-5.5",
+				},
+			],
+		});
 		assert.deepEqual(updated.statusLine, original.statusLine);
 
 		const stateFile = path.join(configDir, "magpie-remote", "state.json");
 		const firstState = JSON.parse(await readFile(stateFile, "utf8"));
 		assert.equal(firstState.root, root);
+		assert.equal(firstState.picker, true);
 		assert.equal(firstState.previous["env.ANTHROPIC_MODEL"], "old-override");
+		assert.equal(firstState.previous.modelPicker, null);
 		assert.deepEqual(firstState.previous["statusLine"], original.statusLine);
 
 		const second = await runCli(configDir, [
@@ -101,7 +124,7 @@ test("login snapshots settings once, keeps custom statusLine, and logout restore
 		assert.match(status.stdout, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 		assert.match(status.stdout, /Gateway key: \*\*\*\*cret/);
 		assert.doesNotMatch(status.stdout, /replacement-secret/);
-		assert.match(status.stdout, /Live check: 2 models available/);
+		assert.match(status.stdout, /Live check: 3 models available/);
 
 		const usage = await runCli(configDir, ["usage", "anthropic", "--json"]);
 		assert.equal(usage.code, 0, usage.stderr);
@@ -175,7 +198,15 @@ test("usage errors can be returned successfully for dynamic command injection", 
 
 test("sync quietly refreshes an outdated copied library only after login", async () => {
 	const configDir = await mkdtemp(path.join(os.tmpdir(), "claude-magpie-sync-"));
-	const { root, server } = await startServer((_request, response) => sendJson(response, catalog));
+	let currentCatalog = catalog;
+	const { root, server } = await startServer((request, response) => {
+		if (request.url === "/v1/models") sendJson(response, currentCatalog);
+		else {
+			response.writeHead(404);
+			response.end();
+		}
+	});
+	let serverClosed = false;
 	try {
 		const beforeLogin = await runCli(configDir, ["sync", "--quiet"]);
 		assert.equal(beforeLogin.code, 0);
@@ -201,8 +232,89 @@ test("sync quietly refreshes an outdated copied library only after login", async
 		assert.equal(sync.stderr, "");
 		assert.notEqual(await readFile(path.join(libDir, "cli.mjs"), "utf8"), "outdated");
 		assert.equal(await readFile(path.join(libDir, "VERSION"), "utf8"), await readFile(path.resolve("VERSION"), "utf8"));
-	} finally {
+		currentCatalog = {
+			data: [
+				...catalog.data,
+				{ id: "zcode/glm-5.1", display_name: "GLM 5.1", magpie_label: "GLM 5.1" },
+			],
+		};
+		await runCli(configDir, ["sync", "--quiet"]);
+		const settingsFile = path.join(configDir, "settings.json");
+		const refreshed = JSON.parse(await readFile(settingsFile, "utf8"));
+		/** @type {Array<{ model: string, label: string, description: string }>} */
+		const refreshedRows = refreshed.modelPicker.options;
+		assert.deepEqual(
+			refreshedRows.map(({ model }) => model),
+			["anthropic/claude-sonnet-4-6", "anthropic/claude-haiku-4-5", "codex/gpt-5.5", "zcode/glm-5.1"],
+		);
+		assert.deepEqual(refreshedRows.at(-1), {
+			model: "zcode/glm-5.1",
+			label: "GLM 5.1",
+			description: "Magpie · zcode/glm-5.1",
+		});
+
 		await closeServer(server);
+		serverClosed = true;
+		const afterOutage = JSON.parse(await readFile(settingsFile, "utf8"));
+		const down = await runCli(configDir, ["sync", "--quiet"]);
+		assert.equal(down.code, 0, down.stderr);
+		assert.equal(down.stdout, "");
+		assert.equal(down.stderr, "");
+		assert.deepEqual(JSON.parse(await readFile(settingsFile, "utf8")).modelPicker, afterOutage.modelPicker);
+	} finally {
+		if (!serverClosed) await closeServer(server);
+		await removeTemporaryDir(configDir);
+	}
+});
+
+test("preserves and restores a user-owned modelPicker", async () => {
+	const configDir = await mkdtemp(path.join(os.tmpdir(), "claude-magpie-picker-owner-"));
+	let catalogRequests = 0;
+	const { root, server } = await startServer((request, response) => {
+		if (request.url === "/v1/models") catalogRequests++;
+		sendJson(response, catalog);
+	});
+	const originalPicker = {
+		options: [{ model: "my-custom-model", label: "My custom model" }],
+		replaceBuiltInOptions: true,
+	};
+	const original = {
+		modelPicker: originalPicker,
+		unrelated: "preserved",
+	};
+	const settingsFile = path.join(configDir, "settings.json");
+	let serverClosed = false;
+	try {
+		await writeFile(settingsFile, `${JSON.stringify(original, null, 2)}\n`);
+		const login = await runCli(configDir, [
+			"login",
+			root,
+			"--key",
+			"x",
+			"--model",
+			"anthropic/claude-sonnet-4-6",
+		]);
+		assert.equal(login.code, 0, login.stderr);
+		assert.match(login.stdout, /modelPicker was left unchanged/);
+		assert.deepEqual(JSON.parse(await readFile(settingsFile, "utf8")).modelPicker, originalPicker);
+		const state = JSON.parse(await readFile(path.join(configDir, "magpie-remote", "state.json"), "utf8"));
+		assert.equal(state.picker, false);
+		assert.deepEqual(state.previous.modelPicker, originalPicker);
+
+		await closeServer(server);
+		serverClosed = true;
+		const sync = await runCli(configDir, ["sync", "--quiet"]);
+		assert.equal(sync.code, 0, sync.stderr);
+		assert.equal(sync.stdout, "");
+		assert.equal(sync.stderr, "");
+		assert.deepEqual(JSON.parse(await readFile(settingsFile, "utf8")).modelPicker, originalPicker);
+		assert.equal(catalogRequests, 1, "sync must not fetch when the picker is not plugin-owned");
+
+		const logout = await runCli(configDir, ["logout"]);
+		assert.equal(logout.code, 0, logout.stderr);
+		assert.deepEqual(JSON.parse(await readFile(settingsFile, "utf8")), original);
+	} finally {
+		if (!serverClosed) await closeServer(server);
 		await removeTemporaryDir(configDir);
 	}
 });

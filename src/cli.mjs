@@ -210,6 +210,7 @@ async function login(args) {
 	const result = await saveLoginSettings({
 		root,
 		key,
+		catalog,
 		model,
 		fastModel,
 		noStatusline: parsed.flags.has("no-statusline"),
@@ -223,7 +224,10 @@ async function login(args) {
 	if (result.hasCustomStatusLine) {
 		console.log(`Your statusLine was left unchanged; call node "${path.join(result.libDir, "cli.mjs")}" statusline from your script to show Magpie usage.`);
 	}
-	console.log("Restart Claude Code; other Magpie models appear in /model.");
+	if (result.hasCustomModelPicker) {
+		console.log("Your modelPicker was left unchanged; remove it to let magpie-remote list gateway models in /model.");
+	}
+	console.log("Restart Claude Code; Magpie models appear in /model.");
 }
 
 /** @param {string[]} args */
