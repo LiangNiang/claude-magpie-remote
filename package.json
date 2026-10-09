@@ -1,6 +1,6 @@
 {
   "name": "claude-magpie-remote",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Claude Code plugin and CLI for a remote Magpie gateway",
   "type": "commonjs",
   "bin": {

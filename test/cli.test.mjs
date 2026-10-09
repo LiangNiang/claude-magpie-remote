@@ -293,7 +293,7 @@ test("login installs and removes its statusline library and rejects invalid sett
 		assert.equal(settings.statusLine.type, "command");
 		assert.match(settings.statusLine.command, /magpie-remote\/lib\/cli\.mjs/);
 		assert.equal(settings.statusLine.refreshInterval, 60);
-		assert.equal(await readFile(path.join(configDir, "magpie-remote", "lib", "VERSION"), "utf8"), "1.0.0\n");
+		assert.equal(await readFile(path.join(configDir, "magpie-remote", "lib", "VERSION"), "utf8"), "1.0.1\n");
 		assert.ok(await readFile(path.join(configDir, "magpie-remote", "lib", "quota.mjs"), "utf8"));
 
 		const logout = await runCli(configDir, ["logout"]);
