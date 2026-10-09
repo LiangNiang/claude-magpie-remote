@@ -5,6 +5,7 @@
 - **远程模型**：将 Magpie catalog 写入 Claude Code 的 `modelPicker`，包括 `codex/...`、`zcode/...` 和路由组模型。
 - **额度显示**：状态栏展示当前模型供应商的用量或余额；`/magpie-remote:usage` 查看网关额度。
 - **可恢复配置**：登录时快照插件将修改的设置，退出登录时恢复。
+- **权限模式建议**：auto 模式的分类器请求会绕开所选模型，推荐改用 `bypassPermissions` 等模式，见[权限模式](#权限模式不要使用-auto)。
 - **零运行时依赖**：使用 Node.js 内置 API，支持 Node.js 18 及以上版本。
 
 ![Claude Code 中的 Magpie 额度状态栏](docs/images/statusline.png)
@@ -105,6 +106,37 @@ magpie-remote usage --json
 ```
 
 `/magpie-remote:usage` 会在 Claude Code 会话中查询额度，并要求 Claude 将结果原样放入文本代码块；因此仍会产生一次 Claude 回复并消耗额度。Claude Code 中的 `! magpie-remote usage` 虽然执行 shell 命令，命令结果也会返回给 Claude，随后可能触发一次模型回复并消耗额度。若只需要直接查看数字，请在普通终端运行 `magpie-remote usage`。
+
+## 权限模式：不要使用 auto
+
+Claude Code 2.1.283 起，终端会话默认进入 auto 权限模式。auto 模式会在 Claude 执行命令、修改文件前额外发送一次**分类器**请求审查操作；分类器默认使用写死的 `claude-sonnet-5`，不受 `/model` 选择和 `ANTHROPIC_DEFAULT_*_MODEL` 影响。经 Magpie 使用时会带来：
+
+- Magpie 请求日志中出现不带供应商前缀的 `claude-sonnet-5` 请求，由 Magpie 自行挑选提供该模型的供应商，绕开你选的模型；
+- 每次工具调用都多一次请求，额外消耗额度。
+
+建议改用不调用分类器的模式。在 `~/.claude/settings.json` 中设置默认权限模式（已有 `permissions` 时合并进去，不要覆盖）：
+
+```json
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  }
+}
+```
+
+| `defaultMode` | 行为 |
+| :- | :- |
+| `bypassPermissions` | 完全允许：执行命令、修改文件都不询问 |
+| `acceptEdits` | 自动允许修改文件，执行命令前询问 |
+| `default` | 普通模式（Manual）：命令和修改文件前都询问 |
+
+- `bypassPermissions` 只能写在用户级 `~/.claude/settings.json`（或 managed settings）中；写在项目的 `.claude/settings.json` / `.claude/settings.local.json` 中不生效，会话会以普通模式启动。
+- 单次启动可用 `claude --dangerously-skip-permissions`（等同 `--permission-mode bypassPermissions`）；`claude --allow-dangerously-skip-permissions` 只把该模式加入 Shift+Tab 循环，不直接开启。
+- 会话中按 Shift+Tab 切换模式，状态栏显示当前模式（如 `⏵⏵ bypass permissions on`、`⏸ manual mode on`）；从 auto 按一次即切到普通模式。
+- 若要彻底从 Shift+Tab 循环中移除 auto，在设置中加入 `"disableAutoMode": "disable"`。
+- 设置非 auto 的 `defaultMode` 后，Claude Code 可能询问一次是否改为 auto，选择不修改即可。
+
+> **注意**：`bypassPermissions` 下 Claude 执行任何命令、修改任何文件都不再询问，也没有分类器拦截危险操作（少数关键路径删除等仍会确认）。官方建议仅在容器、虚拟机等隔离环境中使用；介意风险时请改用 `acceptEdits` 或 `default`。
 
 ## 状态、登出与故障排查
 
